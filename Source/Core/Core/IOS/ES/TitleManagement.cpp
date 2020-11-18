@@ -51,7 +51,7 @@ void ES::TitleImportExportContext::DoState(PointerWrap& p)
 }
 
 ReturnCode ES::ImportTicket(const std::vector<u8>& ticket_bytes, const std::vector<u8>& cert_chain,
-                            TicketImportType type)
+                            TicketImportType type, VerifySignature verify_signature)
 {
   IOS::ES::TicketReader ticket{ticket_bytes};
   if (!ticket.IsValid())
@@ -75,10 +75,13 @@ ReturnCode ES::ImportTicket(const std::vector<u8>& ticket_bytes, const std::vect
     }
   }
 
-  const ReturnCode verify_ret =
-      VerifyContainer(VerifyContainerType::Ticket, VerifyMode::UpdateCertStore, ticket, cert_chain);
-  if (verify_ret != IPC_SUCCESS)
-    return verify_ret;
+  if (verify_signature != VerifySignature::No)
+  {
+    const ReturnCode verify_ret = VerifyContainer(VerifyContainerType::Ticket,
+                                                  VerifyMode::UpdateCertStore, ticket, cert_chain);
+    if (verify_ret != IPC_SUCCESS)
+      return verify_ret;
+  }
 
   const ReturnCode write_ret = WriteTicket(m_ios.GetFS().get(), ticket);
   if (write_ret != IPC_SUCCESS)
@@ -198,16 +201,15 @@ static ReturnCode InitTitleImportKey(const std::vector<u8>& ticket_bytes, IOSC& 
   std::array<u8, 16> iv{};
   std::copy_n(&ticket_bytes[offsetof(IOS::ES::Ticket, title_id)], sizeof(u64), iv.begin());
   const u8 index = ticket_bytes[offsetof(IOS::ES::Ticket, common_key_index)];
-  if (index > 1)
+  if (index >= IOSC::COMMON_KEY_HANDLES.size())
     return ES_INVALID_TICKET;
 
-  return iosc.ImportSecretKey(
-      *handle, index == 0 ? IOSC::HANDLE_COMMON_KEY : IOSC::HANDLE_NEW_COMMON_KEY, iv.data(),
-      &ticket_bytes[offsetof(IOS::ES::Ticket, title_key)], PID_ES);
+  return iosc.ImportSecretKey(*handle, IOSC::COMMON_KEY_HANDLES[index], iv.data(),
+                              &ticket_bytes[offsetof(IOS::ES::Ticket, title_key)], PID_ES);
 }
 
 ReturnCode ES::ImportTitleInit(Context& context, const std::vector<u8>& tmd_bytes,
-                               const std::vector<u8>& cert_chain)
+                               const std::vector<u8>& cert_chain, VerifySignature verify_signature)
 {
   INFO_LOG(IOS_ES, "ImportTitleInit");
   ResetTitleImportContext(&context, m_ios.GetIOSC());
@@ -221,24 +223,32 @@ ReturnCode ES::ImportTitleInit(Context& context, const std::vector<u8>& tmd_byte
   // Finish a previous import (if it exists).
   FinishStaleImport(context.title_import_export.tmd.GetTitleId());
 
-  ReturnCode ret = VerifyContainer(VerifyContainerType::TMD, VerifyMode::UpdateCertStore,
-                                   context.title_import_export.tmd, cert_chain);
-  if (ret != IPC_SUCCESS)
-    return ret;
+  ReturnCode ret = IPC_SUCCESS;
+
+  if (verify_signature != VerifySignature::No)
+  {
+    ret = VerifyContainer(VerifyContainerType::TMD, VerifyMode::UpdateCertStore,
+                          context.title_import_export.tmd, cert_chain);
+    if (ret != IPC_SUCCESS)
+      return ret;
+  }
 
   const auto ticket = FindSignedTicket(context.title_import_export.tmd.GetTitleId());
   if (!ticket.IsValid())
     return ES_NO_TICKET;
 
-  std::vector<u8> cert_store;
-  ret = ReadCertStore(&cert_store);
-  if (ret != IPC_SUCCESS)
-    return ret;
+  if (verify_signature != VerifySignature::No)
+  {
+    std::vector<u8> cert_store;
+    ret = ReadCertStore(&cert_store);
+    if (ret != IPC_SUCCESS)
+      return ret;
 
-  ret = VerifyContainer(VerifyContainerType::Ticket, VerifyMode::DoNotUpdateCertStore, ticket,
-                        cert_store);
-  if (ret != IPC_SUCCESS)
-    return ret;
+    ret = VerifyContainer(VerifyContainerType::Ticket, VerifyMode::DoNotUpdateCertStore, ticket,
+                          cert_store);
+    if (ret != IPC_SUCCESS)
+      return ret;
+  }
 
   ret = InitTitleImportKey(ticket.GetBytes(), m_ios.GetIOSC(),
                            &context.title_import_export.key_handle);

@@ -9,10 +9,11 @@
 #include "Common/CommonTypes.h"
 
 class QAction;
+class QCloseEvent;
+class QShowEvent;
 class QTableWidget;
 class QTableWidgetItem;
 class QToolBar;
-class QCloseEvent;
 
 class WatchWidget : public QDockWidget
 {
@@ -27,6 +28,7 @@ signals:
 
 protected:
   void closeEvent(QCloseEvent*) override;
+  void showEvent(QShowEvent* event) override;
 
 private:
   void CreateWidgets();
@@ -35,6 +37,7 @@ private:
   void OnLoad();
   void OnSave();
 
+  void UpdateButtonsEnabled();
   void Update();
 
   void ShowContextMenu();
@@ -51,5 +54,5 @@ private:
 
   bool m_updating = false;
 
-  static constexpr size_t NUM_COLUMNS = 6;
+  static constexpr int NUM_COLUMNS = 6;
 };

@@ -49,6 +49,8 @@ void JitArm64::Init()
   size_t child_code_size = SConfig::GetInstance().bMMU ? FARCODE_SIZE_MMU : FARCODE_SIZE;
   AllocCodeSpace(CODE_SIZE + child_code_size);
   AddChildCodeSpace(&farcode, child_code_size);
+
+  jo.fastmem_arena = SConfig::GetInstance().bFastmem && Memory::InitFastmemArena();
   jo.enableBlocklink = true;
   jo.optimizeGatherPipe = true;
   UpdateMemoryOptions();
@@ -133,6 +135,7 @@ void JitArm64::ClearCache()
 
 void JitArm64::Shutdown()
 {
+  Memory::ShutdownFastmemArena();
   FreeCodeSpace();
   blocks.Shutdown();
   FreeStack();
@@ -206,20 +209,16 @@ void JitArm64::FallBackToInterpreter(UGeckoInstruction inst)
   }
 }
 
-void JitArm64::HLEFunction(UGeckoInstruction inst)
+void JitArm64::HLEFunction(u32 hook_index)
 {
+  FlushCarry();
   gpr.Flush(FlushMode::FLUSH_ALL);
   fpr.Flush(FlushMode::FLUSH_ALL);
 
   MOVI2R(W0, js.compilerPC);
-  MOVI2R(W1, inst.hex);
+  MOVI2R(W1, hook_index);
   MOVP2R(X30, &HLE::Execute);
   BLR(X30);
-
-  ARM64Reg WA = gpr.GetReg();
-  LDR(INDEX_UNSIGNED, WA, PPC_REG, PPCSTATE_OFF(npc));
-  WriteExit(WA);
-  gpr.Unlock(WA);
 }
 
 void JitArm64::DoNothing(UGeckoInstruction inst)
@@ -487,6 +486,21 @@ void JitArm64::WriteExceptionExit(ARM64Reg dest, bool only_external)
   B(dispatcher);
 }
 
+bool JitArm64::HandleFunctionHooking(u32 address)
+{
+  return HLE::ReplaceFunctionIfPossible(address, [&](u32 hook_index, HLE::HookType type) {
+    HLEFunction(hook_index);
+
+    if (type != HLE::HookType::Replace)
+      return false;
+
+    LDR(INDEX_UNSIGNED, DISPATCHER_PC, PPC_REG, PPCSTATE_OFF(npc));
+    js.downcountAmount += js.st.numCycles;
+    WriteExit(DISPATCHER_PC);
+    return true;
+  });
+}
+
 void JitArm64::DumpCode(const u8* start, const u8* end)
 {
   std::string output;
@@ -745,6 +759,9 @@ void JitArm64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
       SetJumpTarget(exit);
     }
 
+    if (HandleFunctionHooking(op.address))
+      break;
+
     if (!op.skip)
     {
       if ((opinfo->flags & FL_USE_FPU) && !js.firstFPInstructionFound)
@@ -754,9 +771,9 @@ void JitArm64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
         LDR(INDEX_UNSIGNED, WA, PPC_REG, PPCSTATE_OFF(msr));
         FixupBranch b1 = TBNZ(WA, 13);  // Test FP enabled bit
 
-        FixupBranch far = B();
+        FixupBranch far_addr = B();
         SwitchToFarCode();
-        SetJumpTarget(far);
+        SetJumpTarget(far_addr);
 
         gpr.Flush(FLUSH_MAINTAIN_STATE);
         fpr.Flush(FLUSH_MAINTAIN_STATE);
@@ -774,6 +791,13 @@ void JitArm64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
         SetJumpTarget(b1);
 
         js.firstFPInstructionFound = true;
+      }
+
+      if (SConfig::GetInstance().bJITRegisterCacheOff)
+      {
+        gpr.Flush(FLUSH_ALL);
+        fpr.Flush(FLUSH_ALL);
+        FlushCarry();
       }
 
       CompileInstruction(op);

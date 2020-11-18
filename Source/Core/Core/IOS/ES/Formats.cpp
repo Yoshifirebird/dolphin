@@ -9,7 +9,6 @@
 #include <cinttypes>
 #include <cstddef>
 #include <cstring>
-#include <locale>
 #include <map>
 #include <optional>
 #include <string>
@@ -80,11 +79,7 @@ bool operator!=(const Content& lhs, const Content& rhs)
   return !operator==(lhs, rhs);
 }
 
-SignedBlobReader::SignedBlobReader(const std::vector<u8>& bytes) : m_bytes(bytes)
-{
-}
-
-SignedBlobReader::SignedBlobReader(std::vector<u8>&& bytes) : m_bytes(std::move(bytes))
+SignedBlobReader::SignedBlobReader(std::vector<u8> bytes) : m_bytes(std::move(bytes))
 {
 }
 
@@ -93,12 +88,7 @@ const std::vector<u8>& SignedBlobReader::GetBytes() const
   return m_bytes;
 }
 
-void SignedBlobReader::SetBytes(const std::vector<u8>& bytes)
-{
-  m_bytes = bytes;
-}
-
-void SignedBlobReader::SetBytes(std::vector<u8>&& bytes)
+void SignedBlobReader::SetBytes(std::vector<u8> bytes)
 {
   m_bytes = std::move(bytes);
 }
@@ -214,11 +204,7 @@ bool IsValidTMDSize(size_t size)
   return size <= 0x49e4;
 }
 
-TMDReader::TMDReader(const std::vector<u8>& bytes) : SignedBlobReader(bytes)
-{
-}
-
-TMDReader::TMDReader(std::vector<u8>&& bytes) : SignedBlobReader(std::move(bytes))
+TMDReader::TMDReader(std::vector<u8> bytes) : SignedBlobReader(std::move(bytes))
 {
 }
 
@@ -314,11 +300,7 @@ std::string TMDReader::GetGameID() const
   std::memcpy(game_id, m_bytes.data() + offsetof(TMDHeader, title_id) + 4, 4);
   std::memcpy(game_id + 4, m_bytes.data() + offsetof(TMDHeader, group_id), 2);
 
-  const bool all_printable = std::all_of(std::begin(game_id), std::end(game_id), [](char c) {
-    return std::isprint(c, std::locale::classic());
-  });
-
-  if (all_printable)
+  if (std::all_of(std::begin(game_id), std::end(game_id), IsPrintableCharacter))
     return std::string(game_id, sizeof(game_id));
 
   return fmt::format("{:016x}", GetTitleId());
@@ -329,10 +311,7 @@ std::string TMDReader::GetGameTDBID() const
   const u8* begin = m_bytes.data() + offsetof(TMDHeader, title_id) + 4;
   const u8* end = begin + 4;
 
-  const bool all_printable =
-      std::all_of(begin, end, [](char c) { return std::isprint(c, std::locale::classic()); });
-
-  if (all_printable)
+  if (std::all_of(begin, end, IsPrintableCharacter))
     return std::string(begin, end);
 
   return fmt::format("{:016x}", GetTitleId());
@@ -384,11 +363,7 @@ bool TMDReader::FindContentById(u32 id, Content* content) const
   return false;
 }
 
-TicketReader::TicketReader(const std::vector<u8>& bytes) : SignedBlobReader(bytes)
-{
-}
-
-TicketReader::TicketReader(std::vector<u8>&& bytes) : SignedBlobReader(std::move(bytes))
+TicketReader::TicketReader(std::vector<u8> bytes) : SignedBlobReader(std::move(bytes))
 {
 }
 
@@ -452,14 +427,14 @@ std::array<u8, 16> TicketReader::GetTitleKey(const HLE::IOSC& iosc) const
   u8 iv[16] = {};
   std::copy_n(&m_bytes[offsetof(Ticket, title_id)], sizeof(Ticket::title_id), iv);
 
-  const u8 index = m_bytes.at(offsetof(Ticket, common_key_index));
-  auto common_key_handle =
-      index != 1 ? HLE::IOSC::HANDLE_COMMON_KEY : HLE::IOSC::HANDLE_NEW_COMMON_KEY;
-  if (index != 0 && index != 1)
+  u8 index = m_bytes.at(offsetof(Ticket, common_key_index));
+  if (index >= HLE::IOSC::COMMON_KEY_HANDLES.size())
   {
-    WARN_LOG(IOS_ES, "Bad common key index for title %016" PRIx64 ": %u -- using common key 0",
-             GetTitleId(), index);
+    PanicAlert("Bad common key index for title %016" PRIx64 ": %u -- using common key 0",
+               GetTitleId(), index);
+    index = 0;
   }
+  auto common_key_handle = HLE::IOSC::COMMON_KEY_HANDLES[index];
 
   std::array<u8, 16> key;
   iosc.Decrypt(common_key_handle, iv, &m_bytes[offsetof(Ticket, title_key)], 16, key.data(),
@@ -533,11 +508,9 @@ HLE::ReturnCode TicketReader::Unpersonalise(HLE::IOSC& iosc)
   return ret;
 }
 
-void TicketReader::FixCommonKeyIndex()
+void TicketReader::OverwriteCommonKeyIndex(u8 index)
 {
-  u8& index = m_bytes[offsetof(Ticket, common_key_index)];
-  // Assume the ticket is using the normal common key if it's an invalid value.
-  index = index <= 1 ? index : 0;
+  m_bytes[offsetof(Ticket, common_key_index)] = index;
 }
 
 struct SharedContentMap::Entry
@@ -648,7 +621,7 @@ UIDSys::UIDSys(std::shared_ptr<HLE::FS::FileSystem> fs) : m_fs{fs}
   {
     while (true)
     {
-      const std::pair<u32, u64> entry = ReadUidSysEntry(*file);
+      std::pair<u32, u64> entry = ReadUidSysEntry(*file);
       if (!entry.first && !entry.second)
         break;
 
@@ -793,7 +766,7 @@ std::map<std::string, CertReader> ParseCertChain(const std::vector<u8>& chain)
       return certs;
 
     processed += cert_reader.GetBytes().size();
-    const std::string name = cert_reader.GetName();
+    std::string name = cert_reader.GetName();
     certs.emplace(std::move(name), std::move(cert_reader));
   }
   return certs;

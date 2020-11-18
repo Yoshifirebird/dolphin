@@ -8,6 +8,7 @@
 #include "Common/Logging/Log.h"
 #include "VideoBackends/D3D/D3DBase.h"
 #include "VideoCommon/RenderBase.h"
+#include "VideoCommon/VideoCommon.h"
 
 namespace DX11
 {
@@ -34,7 +35,7 @@ void PerfQuery::EnableQuery(PerfQueryGroup type)
   {
     // TODO
     FlushOne();
-    ERROR_LOG(VIDEO, "Flushed query buffer early!");
+    ERROR_LOG_FMT(VIDEO, "Flushed query buffer early!");
   }
 
   // start query

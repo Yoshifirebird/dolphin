@@ -152,7 +152,7 @@ bool DXContext::CreateDevice(u32 adapter_index, bool enable_debug_layer)
   HRESULT hr = m_dxgi_factory->EnumAdapters(adapter_index, &adapter);
   if (FAILED(hr))
   {
-    ERROR_LOG(VIDEO, "Adapter %u not found, using default", adapter_index);
+    ERROR_LOG_FMT(VIDEO, "Adapter {} not found, using default", adapter_index);
     adapter = nullptr;
   }
 
@@ -166,7 +166,7 @@ bool DXContext::CreateDevice(u32 adapter_index, bool enable_debug_layer)
     }
     else
     {
-      ERROR_LOG(VIDEO, "Debug layer requested but not available.");
+      ERROR_LOG_FMT(VIDEO, "Debug layer requested but not available.");
       enable_debug_layer = false;
     }
   }
@@ -180,7 +180,7 @@ bool DXContext::CreateDevice(u32 adapter_index, bool enable_debug_layer)
   if (enable_debug_layer)
   {
     ComPtr<ID3D12InfoQueue> info_queue;
-    if (SUCCEEDED(m_device->QueryInterface(IID_PPV_ARGS(&info_queue))))
+    if (SUCCEEDED(m_device.As(&info_queue)))
     {
       info_queue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
       info_queue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);

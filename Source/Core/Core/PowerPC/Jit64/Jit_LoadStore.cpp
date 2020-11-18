@@ -290,7 +290,6 @@ void Jit64::dcbz(UGeckoInstruction inst)
 {
   INSTRUCTION_START
   JITDISABLE(bJITLoadStoreOff);
-  FALLBACK_IF(SConfig::GetInstance().bLowDCBZHack);
 
   int a = inst.RA;
   int b = inst.RB;
@@ -304,7 +303,17 @@ void Jit64::dcbz(UGeckoInstruction inst)
     AND(32, R(RSCRATCH), Imm32(~31));
   }
 
-  if (MSR.DR)
+  FixupBranch end_dcbz_hack;
+  if (SConfig::GetInstance().bLowDCBZHack)
+  {
+    // HACK: Don't clear any memory in the [0x8000'0000, 0x8000'8000) region.
+    CMP(32, R(RSCRATCH), Imm32(0x8000'8000));
+    end_dcbz_hack = J_CC(CC_L);
+  }
+
+  bool emit_fast_path = MSR.DR && m_jit.jo.fastmem_arena;
+
+  if (emit_fast_path)
   {
     // Perform lookup to see if we can use fast path.
     MOV(64, R(RSCRATCH2), ImmPtr(&PowerPC::dbat_table[0]));
@@ -329,12 +338,15 @@ void Jit64::dcbz(UGeckoInstruction inst)
   ABI_CallFunctionR(PowerPC::ClearCacheLine, RSCRATCH);
   ABI_PopRegistersAndAdjustStack(registersInUse, 0);
 
-  if (MSR.DR)
+  if (emit_fast_path)
   {
-    FixupBranch end = J(true);
+    FixupBranch end_far_code = J(true);
     SwitchToNearCode();
-    SetJumpTarget(end);
+    SetJumpTarget(end_far_code);
   }
+
+  if (SConfig::GetInstance().bLowDCBZHack)
+    SetJumpTarget(end_dcbz_hack);
 }
 
 void Jit64::stX(UGeckoInstruction inst)

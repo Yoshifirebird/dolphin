@@ -22,7 +22,13 @@ u8 DSP::Host::ReadHostMemory(u32 addr)
 void DSP::Host::WriteHostMemory(u8 value, u32 addr)
 {
 }
-void DSP::Host::OSD_AddMessage(const std::string& str, u32 ms)
+void DSP::Host::DMAToDSP(u16* dst, u32 addr, u32 size)
+{
+}
+void DSP::Host::DMAFromDSP(const u16* src, u32 addr, u32 size)
+{
+}
+void DSP::Host::OSD_AddMessage(std::string str, u32 ms)
 {
 }
 bool DSP::Host::OnThread()
@@ -33,7 +39,10 @@ bool DSP::Host::IsWiiHost()
 {
   return false;
 }
-void DSP::Host::CodeLoaded(const u8* ptr, int size)
+void DSP::Host::CodeLoaded(u32 addr, size_t size)
+{
+}
+void DSP::Host::CodeLoaded(const u8* ptr, size_t size)
 {
 }
 void DSP::Host::InterruptRequest()

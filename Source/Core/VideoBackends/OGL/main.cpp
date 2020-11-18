@@ -55,13 +55,14 @@ Make AA apply instantly during gameplay if possible
 
 #include "VideoCommon/FramebufferManager.h"
 #include "VideoCommon/TextureCacheBase.h"
+#include "VideoCommon/VideoCommon.h"
 #include "VideoCommon/VideoConfig.h"
 
 namespace OGL
 {
 std::string VideoBackend::GetName() const
 {
-  return "OGL";
+  return NAME;
 }
 
 std::string VideoBackend::GetDisplayName() const
@@ -89,6 +90,7 @@ void VideoBackend::InitBackendInfo()
   g_Config.backend_info.bSupportsMultithreading = false;
   g_Config.backend_info.bSupportsCopyToVram = true;
   g_Config.backend_info.bSupportsLargePoints = true;
+  g_Config.backend_info.bSupportsDepthReadback = true;
   g_Config.backend_info.bSupportsPartialDepthCopies = true;
   g_Config.backend_info.bSupportsShaderBinaries = false;
   g_Config.backend_info.bSupportsPipelineCacheData = false;

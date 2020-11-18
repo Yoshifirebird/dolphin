@@ -28,11 +28,12 @@
 #include "Core/PowerPC/Interpreter/Interpreter.h"
 #include "Core/PowerPC/JitInterface.h"
 #include "Core/PowerPC/MMU.h"
+#include "Core/PowerPC/PPCSymbolDB.h"
 
 namespace PowerPC
 {
 // STATE_TO_SAVE
-PowerPCState ppcState{};
+PowerPCState ppcState;
 
 static CPUCoreBase* s_cpu_core_base = nullptr;
 static bool s_cpu_core_base_is_injected = false;
@@ -603,7 +604,14 @@ void CheckBreakPoints()
 {
   if (PowerPC::breakpoints.IsAddressBreakPoint(PC))
   {
-    CPU::Break();
+    if (PowerPC::breakpoints.IsBreakPointBreakOnHit(PC))
+      CPU::Break();
+    if (PowerPC::breakpoints.IsBreakPointLogOnHit(PC))
+    {
+      NOTICE_LOG(MEMMAP, "BP %08x %s(%08x %08x %08x %08x %08x %08x %08x %08x %08x %08x) LR=%08x",
+                 PC, g_symbolDB.GetDescription(PC).c_str(), GPR(3), GPR(4), GPR(5), GPR(6), GPR(7),
+                 GPR(8), GPR(9), GPR(10), GPR(11), GPR(12), LR);
+    }
     if (PowerPC::breakpoints.IsTempBreakPoint(PC))
       PowerPC::breakpoints.Remove(PC);
   }

@@ -5,6 +5,9 @@
 #pragma once
 
 #include <string>
+#include <utility>
+
+#include <fmt/format.h>
 
 namespace Common
 {
@@ -24,47 +27,34 @@ void RegisterMsgAlertHandler(MsgAlertHandler handler);
 void RegisterStringTranslator(StringTranslator translator);
 
 std::string GetStringT(const char* string);
+
 bool MsgAlert(bool yes_no, MsgType style, const char* format, ...)
 #ifdef __GNUC__
     __attribute__((format(printf, 3, 4)))
 #endif
     ;
+
+bool MsgAlertFmtImpl(bool yes_no, MsgType style, fmt::string_view format,
+                     const fmt::format_args& args);
+
+template <typename... Args>
+bool MsgAlertFmt(bool yes_no, MsgType style, fmt::string_view format, const Args&... args)
+{
+  return MsgAlertFmtImpl(yes_no, style, format, fmt::make_args_checked<Args...>(format, args...));
+}
+
 void SetEnableAlert(bool enable);
+
+// Like fmt::format, except the string becomes translatable
+template <typename... Args>
+std::string FmtFormatT(const char* string, Args&&... args)
+{
+  return fmt::format(Common::GetStringT(string), std::forward<Args>(args)...);
+}
 }  // namespace Common
 
-#ifdef _WIN32
-#define SuccessAlert(format, ...)                                                                  \
-  Common::MsgAlert(false, Common::MsgType::Information, format, __VA_ARGS__)
+// Deprecated variants of the alert macros. See the fmt variants down below.
 
-#define PanicAlert(format, ...)                                                                    \
-  Common::MsgAlert(false, Common::MsgType::Warning, format, __VA_ARGS__)
-
-#define PanicYesNo(format, ...)                                                                    \
-  Common::MsgAlert(true, Common::MsgType::Warning, format, __VA_ARGS__)
-
-#define AskYesNo(format, ...) Common::MsgAlert(true, Common::MsgType::Question, format, __VA_ARGS__)
-
-#define CriticalAlert(format, ...)                                                                 \
-  Common::MsgAlert(false, Common::MsgType::Critical, format, __VA_ARGS__)
-
-// Use these macros (that do the same thing) if the message should be translated.
-
-#define SuccessAlertT(format, ...)                                                                 \
-  Common::MsgAlert(false, Common::MsgType::Information, format, __VA_ARGS__)
-
-#define PanicAlertT(format, ...)                                                                   \
-  Common::MsgAlert(false, Common::MsgType::Warning, format, __VA_ARGS__)
-
-#define PanicYesNoT(format, ...)                                                                   \
-  Common::MsgAlert(true, Common::MsgType::Warning, format, __VA_ARGS__)
-
-#define AskYesNoT(format, ...)                                                                     \
-  Common::MsgAlert(true, Common::MsgType::Question, format, __VA_ARGS__)
-
-#define CriticalAlertT(format, ...)                                                                \
-  Common::MsgAlert(false, Common::MsgType::Critical, format, __VA_ARGS__)
-
-#else
 #define SuccessAlert(format, ...)                                                                  \
   Common::MsgAlert(false, Common::MsgType::Information, format, ##__VA_ARGS__)
 
@@ -95,4 +85,36 @@ void SetEnableAlert(bool enable);
 
 #define CriticalAlertT(format, ...)                                                                \
   Common::MsgAlert(false, Common::MsgType::Critical, format, ##__VA_ARGS__)
-#endif
+
+// Fmt-capable variants of the macros
+
+#define SuccessAlertFmt(format, ...)                                                               \
+  Common::MsgAlertFmt(false, Common::MsgType::Information, FMT_STRING(format), ##__VA_ARGS__)
+
+#define PanicAlertFmt(format, ...)                                                                 \
+  Common::MsgAlertFmt(false, Common::MsgType::Warning, FMT_STRING(format), ##__VA_ARGS__)
+
+#define PanicYesNoFmt(format, ...)                                                                 \
+  Common::MsgAlertFmt(true, Common::MsgType::Warning, FMT_STRING(format), ##__VA_ARGS__)
+
+#define AskYesNoFmt(format, ...)                                                                   \
+  Common::MsgAlertFmt(true, Common::MsgType::Question, FMT_STRING(format), ##__VA_ARGS__)
+
+#define CriticalAlertFmt(format, ...)                                                              \
+  Common::MsgAlertFmt(false, Common::MsgType::Critical, FMT_STRING(format), ##__VA_ARGS__)
+
+// Use these macros (that do the same thing) if the message should be translated.
+#define SuccessAlertFmtT(format, ...)                                                              \
+  Common::MsgAlertFmt(false, Common::MsgType::Information, FMT_STRING(format), ##__VA_ARGS__)
+
+#define PanicAlertFmtT(format, ...)                                                                \
+  Common::MsgAlertFmt(false, Common::MsgType::Warning, FMT_STRING(format), ##__VA_ARGS__)
+
+#define PanicYesNoFmtT(format, ...)                                                                \
+  Common::MsgAlertFmt(true, Common::MsgType::Warning, FMT_STRING(format), ##__VA_ARGS__)
+
+#define AskYesNoFmtT(format, ...)                                                                  \
+  Common::MsgAlertFmt(true, Common::MsgType::Question, FMT_STRING(format), ##__VA_ARGS__)
+
+#define CriticalAlertFmtT(format, ...)                                                             \
+  Common::MsgAlertFmt(false, Common::MsgType::Critical, FMT_STRING(format), ##__VA_ARGS__)

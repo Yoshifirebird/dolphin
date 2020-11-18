@@ -11,12 +11,11 @@
 #include "AudioCommon/OpenSLESStream.h"
 #include "AudioCommon/PulseAudioStream.h"
 #include "AudioCommon/WASAPIStream.h"
-#include "AudioCommon/XAudio2Stream.h"
-#include "AudioCommon/XAudio2_7Stream.h"
 #include "Common/Common.h"
 #include "Common/FileUtil.h"
 #include "Common/Logging/Log.h"
 #include "Core/ConfigManager.h"
+#include "Core/HW/AudioInterface.h"
 
 // This shouldn't be a global, at least not here.
 std::unique_ptr<SoundStream> g_sound_stream;
@@ -29,37 +28,50 @@ static bool s_sound_stream_running = false;
 constexpr int AUDIO_VOLUME_MIN = 0;
 constexpr int AUDIO_VOLUME_MAX = 100;
 
+static std::unique_ptr<SoundStream> CreateSoundStreamForBackend(std::string_view backend)
+{
+  if (backend == BACKEND_CUBEB)
+    return std::make_unique<CubebStream>();
+  else if (backend == BACKEND_OPENAL && OpenALStream::isValid())
+    return std::make_unique<OpenALStream>();
+  else if (backend == BACKEND_NULLSOUND)
+    return std::make_unique<NullSound>();
+  else if (backend == BACKEND_ALSA && AlsaSound::isValid())
+    return std::make_unique<AlsaSound>();
+  else if (backend == BACKEND_PULSEAUDIO && PulseAudio::isValid())
+    return std::make_unique<PulseAudio>();
+  else if (backend == BACKEND_OPENSLES && OpenSLESStream::isValid())
+    return std::make_unique<OpenSLESStream>();
+  else if (backend == BACKEND_WASAPI && WASAPIStream::isValid())
+    return std::make_unique<WASAPIStream>();
+  return {};
+}
+
 void InitSoundStream()
 {
   std::string backend = SConfig::GetInstance().sBackend;
-  if (backend == BACKEND_CUBEB)
-    g_sound_stream = std::make_unique<CubebStream>();
-  else if (backend == BACKEND_OPENAL && OpenALStream::isValid())
-    g_sound_stream = std::make_unique<OpenALStream>();
-  else if (backend == BACKEND_NULLSOUND)
-    g_sound_stream = std::make_unique<NullSound>();
-  else if (backend == BACKEND_XAUDIO2)
+  g_sound_stream = CreateSoundStreamForBackend(backend);
+
+  if (!g_sound_stream)
   {
-    if (XAudio2::isValid())
-      g_sound_stream = std::make_unique<XAudio2>();
-    else if (XAudio2_7::isValid())
-      g_sound_stream = std::make_unique<XAudio2_7>();
+    WARN_LOG_FMT(AUDIO, "Unknown backend {}, using {} instead.", backend, GetDefaultSoundBackend());
+    backend = GetDefaultSoundBackend();
+    g_sound_stream = CreateSoundStreamForBackend(GetDefaultSoundBackend());
   }
-  else if (backend == BACKEND_ALSA && AlsaSound::isValid())
-    g_sound_stream = std::make_unique<AlsaSound>();
-  else if (backend == BACKEND_PULSEAUDIO && PulseAudio::isValid())
-    g_sound_stream = std::make_unique<PulseAudio>();
-  else if (backend == BACKEND_OPENSLES && OpenSLESStream::isValid())
-    g_sound_stream = std::make_unique<OpenSLESStream>();
-  else if (backend == BACKEND_WASAPI && WASAPIStream::isValid())
-    g_sound_stream = std::make_unique<WASAPIStream>();
 
   if (!g_sound_stream || !g_sound_stream->Init())
   {
-    WARN_LOG(AUDIO, "Could not initialize backend %s, using %s instead.", backend.c_str(),
-             BACKEND_NULLSOUND);
+    WARN_LOG_FMT(AUDIO, "Could not initialize backend {}, using {} instead.", backend,
+                 BACKEND_NULLSOUND);
     g_sound_stream = std::make_unique<NullSound>();
+    g_sound_stream->Init();
   }
+
+  // Ideally these two calls would be done in AudioInterface::Init so that we don't
+  // need to have a dependency on AudioInterface here, but this has to be done
+  // after creating g_sound_stream (above) and before starting audio dumping (below)
+  g_sound_stream->GetMixer()->SetDMAInputSampleRate(AudioInterface::GetAIDSampleRate());
+  g_sound_stream->GetMixer()->SetStreamInputSampleRate(AudioInterface::GetAISSampleRate());
 
   UpdateSoundStream();
   SetSoundStreamRunning(true);
@@ -70,7 +82,7 @@ void InitSoundStream()
 
 void ShutdownSoundStream()
 {
-  INFO_LOG(AUDIO, "Shutting down sound stream");
+  INFO_LOG_FMT(AUDIO, "Shutting down sound stream");
 
   if (SConfig::GetInstance().m_DumpAudio && s_audio_dump_start)
     StopAudioDump();
@@ -78,7 +90,7 @@ void ShutdownSoundStream()
   SetSoundStreamRunning(false);
   g_sound_stream.reset();
 
-  INFO_LOG(AUDIO, "Done shutting down sound stream");
+  INFO_LOG_FMT(AUDIO, "Done shutting down sound stream");
 }
 
 std::string GetDefaultSoundBackend()
@@ -95,14 +107,17 @@ std::string GetDefaultSoundBackend()
   return backend;
 }
 
+DPL2Quality GetDefaultDPL2Quality()
+{
+  return DPL2Quality::High;
+}
+
 std::vector<std::string> GetSoundBackends()
 {
   std::vector<std::string> backends;
 
   backends.emplace_back(BACKEND_NULLSOUND);
   backends.emplace_back(BACKEND_CUBEB);
-  if (XAudio2_7::isValid() || XAudio2::isValid())
-    backends.emplace_back(BACKEND_XAUDIO2);
   if (AlsaSound::isValid())
     backends.emplace_back(BACKEND_ALSA);
   if (PulseAudio::isValid())
@@ -127,8 +142,6 @@ bool SupportsDPL2Decoder(std::string_view backend)
     return true;
   if (backend == BACKEND_PULSEAUDIO)
     return true;
-  if (backend == BACKEND_XAUDIO2)
-    return true;
   return false;
 }
 
@@ -142,8 +155,7 @@ bool SupportsVolumeChanges(std::string_view backend)
   // FIXME: this one should ask the backend whether it supports it.
   //       but getting the backend from string etc. is probably
   //       too much just to enable/disable a stupid slider...
-  return backend == BACKEND_CUBEB || backend == BACKEND_OPENAL || backend == BACKEND_XAUDIO2 ||
-         backend == BACKEND_WASAPI;
+  return backend == BACKEND_CUBEB || backend == BACKEND_OPENAL || backend == BACKEND_WASAPI;
 }
 
 void UpdateSoundStream()
@@ -167,9 +179,9 @@ void SetSoundStreamRunning(bool running)
   if (g_sound_stream->SetRunning(running))
     return;
   if (running)
-    ERROR_LOG(AUDIO, "Error starting stream.");
+    ERROR_LOG_FMT(AUDIO, "Error starting stream.");
   else
-    ERROR_LOG(AUDIO, "Error stopping stream.");
+    ERROR_LOG_FMT(AUDIO, "Error stopping stream.");
 }
 
 void SendAIBuffer(const short* samples, unsigned int num_samples)

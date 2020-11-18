@@ -23,7 +23,7 @@
 #include "VideoCommon/VideoBackendBase.h"
 #include "VideoCommon/VideoConfig.h"
 
-#if defined(VK_USE_PLATFORM_MACOS_MVK)
+#if defined(VK_USE_PLATFORM_METAL_EXT)
 #include <objc/message.h>
 #endif
 
@@ -79,7 +79,8 @@ void VideoBackend::InitBackendInfo()
 // Helper method to check whether the Host GPU logging category is enabled.
 static bool IsHostGPULoggingEnabled()
 {
-  return LogManager::GetInstance()->IsEnabled(LogTypes::HOST_GPU, LogTypes::LERROR);
+  return Common::Log::LogManager::GetInstance()->IsEnabled(Common::Log::HOST_GPU,
+                                                           Common::Log::LERROR);
 }
 
 // Helper method to determine whether to enable the debug report extension.
@@ -105,7 +106,7 @@ bool VideoBackend::Initialize(const WindowSystemInfo& wsi)
   bool enable_validation_layer = g_Config.bEnableValidationLayer;
   if (enable_validation_layer && !VulkanContext::CheckValidationLayerAvailablility())
   {
-    WARN_LOG(VIDEO, "Validation layer requested but not available, disabling.");
+    WARN_LOG_FMT(VIDEO, "Validation layer requested but not available, disabling.");
     enable_validation_layer = false;
   }
 
@@ -165,7 +166,7 @@ bool VideoBackend::Initialize(const WindowSystemInfo& wsi)
   size_t selected_adapter_index = static_cast<size_t>(g_Config.iAdapter);
   if (selected_adapter_index >= gpu_list.size())
   {
-    WARN_LOG(VIDEO, "Vulkan adapter index out of range, selecting first adapter.");
+    WARN_LOG_FMT(VIDEO, "Vulkan adapter index out of range, selecting first adapter.");
     selected_adapter_index = 0;
   }
 
@@ -186,6 +187,8 @@ bool VideoBackend::Initialize(const WindowSystemInfo& wsi)
                                              g_vulkan_context->GetDeviceFeatures());
   VulkanContext::PopulateBackendInfoMultisampleModes(
       &g_Config, g_vulkan_context->GetPhysicalDevice(), g_vulkan_context->GetDeviceProperties());
+  g_Config.backend_info.bSupportsExclusiveFullscreen =
+      enable_surface && g_vulkan_context->SupportsExclusiveFullscreen(wsi, surface);
 
   // With the backend information populated, we can now initialize videocommon.
   InitializeShared();
@@ -277,7 +280,7 @@ void VideoBackend::Shutdown()
   UnloadVulkanLibrary();
 }
 
-#if defined(VK_USE_PLATFORM_MACOS_MVK)
+#if defined(VK_USE_PLATFORM_METAL_EXT)
 static bool IsRunningOnMojaveOrHigher()
 {
   // id processInfo = [NSProcessInfo processInfo]
@@ -301,15 +304,15 @@ static bool IsRunningOnMojaveOrHigher()
 }
 #endif
 
-void VideoBackend::PrepareWindow(const WindowSystemInfo& wsi)
+void VideoBackend::PrepareWindow(WindowSystemInfo& wsi)
 {
-#if defined(VK_USE_PLATFORM_MACOS_MVK)
+#if defined(VK_USE_PLATFORM_METAL_EXT)
   // This is kinda messy, but it avoids having to write Objective C++ just to create a metal layer.
   id view = reinterpret_cast<id>(wsi.render_surface);
   Class clsCAMetalLayer = objc_getClass("CAMetalLayer");
   if (!clsCAMetalLayer)
   {
-    ERROR_LOG(VIDEO, "Failed to get CAMetalLayer class.");
+    ERROR_LOG_FMT(VIDEO, "Failed to get CAMetalLayer class.");
     return;
   }
 
@@ -318,7 +321,7 @@ void VideoBackend::PrepareWindow(const WindowSystemInfo& wsi)
                                                                 sel_getUid("layer"));
   if (!layer)
   {
-    ERROR_LOG(VIDEO, "Failed to create Metal layer.");
+    ERROR_LOG_FMT(VIDEO, "Failed to create Metal layer.");
     return;
   }
 
@@ -339,6 +342,10 @@ void VideoBackend::PrepareWindow(const WindowSystemInfo& wsi)
   // layer.contentsScale = factor
   reinterpret_cast<void (*)(id, SEL, double)>(objc_msgSend)(layer, sel_getUid("setContentsScale:"),
                                                             factor);
+
+  // Store the layer pointer, that way MoltenVK doesn't call [NSView layer] outside the main thread.
+  wsi.render_surface = layer;
+
   // The Metal version included with MacOS 10.13 and below does not support several features we
   // require. Furthermore, the drivers seem to choke on our shaders (mainly Intel). So, we warn
   // the user that this is an unsupported configuration, but permit them to continue.

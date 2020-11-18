@@ -2,13 +2,15 @@
 // Licensed under GPLv2+
 // Refer to the license.txt file included.
 
+#include "VideoBackends/OGL/PerfQuery.h"
+
 #include <memory>
 
 #include "Common/CommonTypes.h"
 #include "Common/GL/GLExtensions/GLExtensions.h"
 
-#include "VideoBackends/OGL/PerfQuery.h"
 #include "VideoBackends/OGL/Render.h"
+#include "VideoCommon/VideoCommon.h"
 #include "VideoCommon/VideoConfig.h"
 
 namespace OGL
@@ -102,7 +104,7 @@ void PerfQueryGL::EnableQuery(PerfQueryGroup type)
   if (m_query_buffer.size() == m_query_count)
   {
     FlushOne();
-    // ERROR_LOG(VIDEO, "Flushed query buffer early!");
+    // ERROR_LOG_FMT(VIDEO, "Flushed query buffer early!");
   }
 
   // start query
@@ -196,7 +198,7 @@ void PerfQueryGLESNV::EnableQuery(PerfQueryGroup type)
   if (m_query_buffer.size() == m_query_count)
   {
     FlushOne();
-    // ERROR_LOG(VIDEO, "Flushed query buffer early!");
+    // ERROR_LOG_FMT(VIDEO, "Flushed query buffer early!");
   }
 
   // start query

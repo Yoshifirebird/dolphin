@@ -64,7 +64,7 @@ void SWVertexLoader::DrawCurrentBatch(u32 base_index, u32 num_indices, u32 base_
     Rasterizer::SetTevReg(i, Tev::ALP_C, PixelShaderManager::constants.kcolors[i][3]);
   }
 
-  for (u32 i = 0; i < IndexGenerator::GetIndexLen(); i++)
+  for (u32 i = 0; i < m_index_generator.GetIndexLen(); i++)
   {
     const u16 index = m_cpu_index_buffer[i];
     memset(static_cast<void*>(&m_vertex), 0, sizeof(m_vertex));
@@ -91,7 +91,7 @@ void SWVertexLoader::DrawCurrentBatch(u32 base_index, u32 num_indices, u32 base_
     // assemble and rasterize the primitive
     m_setup_unit.SetupVertex();
 
-    INCSTAT(stats.thisFrame.numVerticesLoaded)
+    INCSTAT(g_stats.this_frame.num_vertices_loaded)
   }
 
   DebugUtil::OnObjectEnd();
@@ -110,7 +110,7 @@ void SWVertexLoader::SetFormat(u8 attributeIndex, u8 primitiveType)
       xfmem.MatrixIndexB.Tex6MtxIdx != g_main_cp_state.matrix_index_b.Tex6MtxIdx ||
       xfmem.MatrixIndexB.Tex7MtxIdx != g_main_cp_state.matrix_index_b.Tex7MtxIdx)
   {
-    ERROR_LOG(VIDEO, "Matrix indices don't match");
+    ERROR_LOG_FMT(VIDEO, "Matrix indices don't match");
   }
 
   m_vertex.posMtx = xfmem.MatrixIndexA.PosNormalMtxIdx;
